@@ -6,10 +6,12 @@ import { Btn, Input, Badge, Card, StatCard, Modal, Table, Select } from '@/compo
 import { notify, ImgWithFallback } from '@/components/shared'
 import { fmt, ts } from '@/lib/utils'
 import { PRODUCT_IMAGES } from '@/lib/seed-data'
+import { inventoryService, serialsService } from '@/services'
+import { isSupabaseConfigured } from '@/lib/supabase'
 
 const DEFAULT_REORDER = 10
 
-export function InventoryManagement({ products, setProducts, addAudit, currentUser, t: tProp }) {
+export function InventoryManagement({ products, setProducts, addAudit, currentUser, t: tProp, siteId }) {
   const navigate = useNavigate()
   const { t: tTheme } = useTheme()
   const { currentUser: authUser } = useAuth()
@@ -19,7 +21,10 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
   const [ns, setNs] = useState('')
   const [addQ, setAddQ] = useState('')
   const [showReceiving, setShowReceiving] = useState(false)
-  const [receivingForm, setReceivingForm] = useState({ productId: '', qty: '', notes: '' })
+  const [receivingForm, setReceivingForm] = useState({ productId: '', qty: '', notes: '', serials: [] })
+  const [showSerialLookup, setShowSerialLookup] = useState(false)
+  const [serialLookupInput, setSerialLookupInput] = useState('')
+  const [serialLookupResult, setSerialLookupResult] = useState(undefined) // undefined=not searched, null=not found, object=found
   const [movements, setMovements] = useState([])
 
   const user = currentUser ?? authUser
@@ -35,6 +40,8 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
   const lowStockCount = lowStockProducts.length
   const totalUnits = products.reduce((s, p) => s + (p.stock || 0), 0)
 
+  const effectiveSiteId = siteId || 'b0000000-0000-0000-0000-000000000001'
+
   const addMovement = (type, productName, productId, quantity, details = '') => {
     setMovements(m => [{ id: `mov-${Date.now()}`, type, productName, productId, quantity, user: userName, timestamp: ts(), details }, ...m].slice(0, 100))
   }
@@ -48,24 +55,48 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
     addMovement(type, product.name, productId, newStock - prevStock, details)
   }
 
-  const handleReceiving = () => {
+  const handleReceiving = async () => {
     const product = products.find(p => String(p.id) === receivingForm.productId)
     if (!product) { notify('Select a product', 'error'); return }
     const qty = parseInt(receivingForm.qty)
     if (!qty || qty <= 0) { notify('Enter a valid quantity', 'error'); return }
 
+    const trackSerial = product.track_serial
+    const serials = (receivingForm.serials || []).map(s => String(s).trim()).filter(Boolean)
+    if (trackSerial && serials.length !== qty) {
+      notify(`Enter ${qty} serial number(s) for this product`, 'error')
+      return
+    }
+
     const newStock = product.stock + qty
-    applyStockChange(product.id, newStock, 'Goods Received', receivingForm.notes ? `+${qty} — ${receivingForm.notes}` : `+${qty}`)
-    notify(`Received ${qty}× ${product.name}`, 'success')
-    setShowReceiving(false)
-    setReceivingForm({ productId: '', qty: '', notes: '' })
+    try {
+      if (isSupabaseConfigured()) {
+        await inventoryService.receiveStock(product.id, effectiveSiteId, qty, receivingForm.notes, user?.id)
+        if (trackSerial && serials.length) {
+          await serialsService.registerSerials(product.id, effectiveSiteId, serials)
+        }
+      }
+      applyStockChange(product.id, newStock, 'Goods Received', receivingForm.notes ? `+${qty} — ${receivingForm.notes}` : `+${qty}`)
+      notify(`Received ${qty}× ${product.name}${trackSerial ? ` (${serials.length} serials)` : ''}`, 'success')
+      setShowReceiving(false)
+      setReceivingForm({ productId: '', qty: '', notes: '', serials: [] })
+    } catch (err) {
+      notify(err?.message || 'Failed to record receipt', 'error')
+    }
   }
 
-  const handleUpdateStock = () => {
+  const handleUpdateStock = async () => {
     const q = Math.max(0, ns !== '' ? +ns : editStock.stock + (+addQ || 0))
-    applyStockChange(editStock.id, q, 'Stock Updated', `${editStock.name} → ${q}`)
-    notify(`Stock updated to ${q}`, 'success')
-    setEditStock(null)
+    try {
+      if (isSupabaseConfigured()) {
+        await inventoryService.adjustStock(editStock.id, effectiveSiteId, q, 'adjust', `${editStock.name} → ${q}`, user?.id)
+      }
+      applyStockChange(editStock.id, q, 'Stock Updated', `${editStock.name} → ${q}`)
+      notify(`Stock updated to ${q}`, 'success')
+      setEditStock(null)
+    } catch (err) {
+      notify(err?.message || 'Failed to update stock', 'error')
+    }
   }
 
   const getStatusBadge = (p) => {
@@ -85,6 +116,7 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
           <Btn t={t} variant="secondary" onClick={() => navigate('/app/stocktake')}>📋 Stocktake</Btn>
           <Btn t={t} variant="secondary" onClick={() => navigate('/app/stock-transfer')}>🔄 Transfer Stock</Btn>
           <Btn t={t} variant="secondary" onClick={() => navigate('/app/damage-lost')}>🔴 Damaged/Lost</Btn>
+          <Btn t={t} variant="secondary" onClick={() => setShowSerialLookup(true)}>🔢 Serial Lookup</Btn>
         </div>
       </div>
 
@@ -168,6 +200,27 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
         </Modal>
       )}
 
+      {/** Serial lookup modal */}
+      {showSerialLookup && (
+        <Modal t={t} title="Serial Number Lookup" onClose={() => { setShowSerialLookup(false); setSerialLookupResult(undefined); setSerialLookupInput('') }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Input t={t} label="Serial number" value={serialLookupInput} onChange={v => { setSerialLookupInput(v); setSerialLookupResult(undefined) }} placeholder="Enter serial to lookup" />
+            <Btn t={t} onClick={async () => { const r = await serialsService.lookupSerial(serialLookupInput); setSerialLookupResult(r ?? null) }} disabled={!serialLookupInput.trim()}>Lookup</Btn>
+            {serialLookupResult && typeof serialLookupResult === 'object' && (
+              <div style={{ background: t.bg3, borderRadius: 10, padding: 16, border: `1px solid ${t.border}` }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.text3, marginBottom: 8 }}>Result</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: t.text }}>{serialLookupResult.name}</div>
+                <div style={{ fontSize: 12, color: t.text3, marginTop: 4 }}>SKU: {serialLookupResult.sku}</div>
+                <Badge t={t} text={serialLookupResult.serial_status || 'unknown'} color={serialLookupResult.serial_status === 'in_stock' ? 'green' : serialLookupResult.serial_status === 'sold' ? 'blue' : 'yellow'} style={{ marginTop: 8 }} />
+              </div>
+            )}
+            {serialLookupResult === null && (
+              <div style={{ fontSize: 13, color: t.text3 }}>Serial not found</div>
+            )}
+          </div>
+        </Modal>
+      )}
+
       {/** 5. Goods receiving modal */}
       {showReceiving && (
         <Modal t={t} title="Goods Receiving" onClose={() => setShowReceiving(false)}>
@@ -178,10 +231,26 @@ export function InventoryManagement({ products, setProducts, addAudit, currentUs
             <Select
               t={t} label="Product"
               value={receivingForm.productId}
-              onChange={v => setReceivingForm(f => ({ ...f, productId: v }))}
+              onChange={v => setReceivingForm(f => ({ ...f, productId: v, serials: [] }))}
               options={[{ value: '', label: '— Select Product —' }, ...products.map(p => ({ value: String(p.id), label: `${p.emoji} ${p.name} (current: ${p.stock})` }))]}
             />
-            <Input t={t} label="Quantity Received" value={receivingForm.qty} onChange={v => setReceivingForm(f => ({ ...f, qty: v }))} type="number" placeholder="Units to add" />
+            <Input t={t} label="Quantity Received" value={receivingForm.qty} onChange={v => {
+              const qty = parseInt(v) || 0
+              setReceivingForm(f => ({ ...f, qty: v, serials: Array.from({ length: qty }, (_, i) => f.serials[i] || '') }))
+            }} type="number" placeholder="Units to add" />
+            {receivingForm.productId && (() => {
+              const p = products.find(x => String(x.id) === receivingForm.productId)
+              const qty = parseInt(receivingForm.qty) || 0
+              if (!p?.track_serial || qty <= 0) return null
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.text3, textTransform: 'uppercase' }}>Serial numbers ({qty} required)</div>
+                  {Array.from({ length: qty }, (_, i) => (
+                    <Input key={i} t={t} label={`Serial #${i + 1}`} value={receivingForm.serials[i] || ''} onChange={v => setReceivingForm(f => ({ ...f, serials: f.serials.map((s, j) => j === i ? v : s) }))} placeholder="Enter serial number" />
+                  ))}
+                </div>
+              )
+            })()}
             <Input t={t} label="Notes (optional)" value={receivingForm.notes} onChange={v => setReceivingForm(f => ({ ...f, notes: v }))} placeholder="e.g. PO-12345, delivery date" />
             <Btn t={t} onClick={handleReceiving} disabled={!receivingForm.productId || !receivingForm.qty}>
               📥 Record Receipt

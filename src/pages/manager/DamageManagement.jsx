@@ -5,8 +5,9 @@ import { useAuth } from '@/context/AuthContext'
 import { Btn, Input, Badge, Card, Modal, Table, Select } from '@/components/ui'
 import { notify } from '@/components/shared'
 import { ts } from '@/lib/utils'
-import { damageLostService, productsService, sitesService } from '@/services'
-import { useQuery } from '@tanstack/react-query'
+import { damageLostService, productsService, sitesService, inventoryService } from '@/services'
+import { isSupabaseConfigured } from '@/lib/supabase'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 const TYPES = ['Damage', 'Lost']
 
@@ -14,6 +15,7 @@ export default function DamageManagement() {
   const navigate = useNavigate()
   const { t } = useTheme()
   const { currentUser } = useAuth()
+  const queryClient = useQueryClient()
   
   const [showModal, setShowModal] = useState(false)
   const [editingId, setEditingId] = useState(null)
@@ -74,6 +76,18 @@ export default function DamageManagement() {
         notify('Entry updated successfully', 'success')
       } else {
         await damageLostService.createDamageLostEntry(payload)
+        if (isSupabaseConfigured()) {
+          const movementType = form.type === 'Damage' ? 'damage' : 'loss'
+          await inventoryService.deductStock(
+            form.productId,
+            form.outlet,
+            parseInt(form.quantity),
+            movementType,
+            form.reason,
+            currentUser?.id
+          )
+          queryClient.invalidateQueries({ queryKey: ['products'] })
+        }
         notify('Entry recorded successfully', 'success')
       }
       refetch()

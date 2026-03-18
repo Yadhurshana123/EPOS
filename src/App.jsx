@@ -48,6 +48,7 @@ const StocktakeManagement = lazyRetry(() => import('@/pages/manager/StocktakeMan
 
 const POSTerminal = lazyRetry(() => import('@/pages/pos/POSTerminal'), 'POSTerminal')
 const CashierOrders = lazyRetry(() => import('@/pages/cashier/CashierOrders'), 'CashierOrders')
+const CashierReturns = lazyRetry(() => import('@/pages/cashier/CashierReturns'), 'CashierReturns')
 const HardwarePanel = lazyRetry(() => import('@/pages/cashier/HardwarePanel'), 'HardwarePanel')
 const CashManagement = lazyRetry(() => import('@/pages/cashier/CashManagement'), 'CashManagement')
 
@@ -206,8 +207,8 @@ function AppContent() {
   const [auditLogs, setAuditLogs] = useState([])
 
   useSupabaseSync(setProducts, 'products', INITIAL_PRODUCTS, productsService.fetchProducts)
-  useSupabaseSync(setOrders, 'orders', INITIAL_ORDERS)
-  useSupabaseSync(setReturns, 'returns', INITIAL_RETURNS)
+  useSupabaseSync(setOrders, 'orders', INITIAL_ORDERS, () => import('@/services').then(m => m.ordersService.fetchOrders()))
+  useSupabaseSync(setReturns, 'returns', INITIAL_RETURNS, () => import('@/services').then(m => m.returnsService.fetchReturns()))
   useSupabaseSync(setCounters, 'counters', INITIAL_COUNTERS)
   useSupabaseSync(setBanners, 'banners', INITIAL_BANNERS)
   useSupabaseSync(setCoupons, 'coupons', INITIAL_COUPONS)
@@ -220,10 +221,12 @@ function AppContent() {
     }
     setAuditLogs(l => [entry, ...l])
     if (isSupabaseConfigured()) {
+      const uid = u?.id
+      const isValidUuid = typeof uid === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid)
       supabase.from('audit_logs').insert({
-        user_id: u?.id || null,
+        user_id: isValidUuid ? uid : null,
         action, module, details,
-      }).then(() => { })
+      }).then(() => { }).catch(() => {})
     }
   }, [])
 
@@ -235,6 +238,7 @@ function AppContent() {
     banners, setBanners, coupons, setCoupons,
     auditLogs, addAudit, addGlobalNotif,
     currentUser, t, darkMode, setDarkMode,
+    siteId: currentUser?.site_id || DEFAULT_SITE_ID,
   }
 
   return (
@@ -350,7 +354,7 @@ function AppContent() {
             } />
             <Route path="inventory" element={
               <ProtectedRoute allowedRoles={['manager', 'admin']}>
-                <InventoryManagement products={products} setProducts={setProducts} addAudit={addAudit} currentUser={currentUser} t={t} />
+                <InventoryManagement products={products} setProducts={setProducts} addAudit={addAudit} currentUser={currentUser} t={t} siteId={currentUser?.site_id || DEFAULT_SITE_ID} />
               </ProtectedRoute>
             } />
             <Route path="team" element={
@@ -365,8 +369,10 @@ function AppContent() {
             } />
             <Route path="returns" element={
               currentUser?.role === 'manager' || currentUser?.role === 'admin'
-                ? <ReturnManagement orders={orders} setOrders={setOrders} returns={returns} setReturns={setReturns} products={products} setProducts={setProducts} settings={settings} addAudit={addAudit} currentUser={currentUser} t={t} />
-                : <CustomerReturns orders={orders} returns={returns} setReturns={setReturns} products={products} setProducts={setProducts} addAudit={addAudit} currentUser={currentUser} settings={settings} t={t} />
+                ? <ReturnManagement orders={orders} setOrders={setOrders} returns={returns} setReturns={setReturns} products={products} setProducts={setProducts} settings={settings} addAudit={addAudit} currentUser={currentUser} t={t} siteId={currentUser?.site_id || DEFAULT_SITE_ID} />
+                : currentUser?.role === 'cashier'
+                  ? <CashierReturns orders={orders} setOrders={setOrders} returns={returns} setReturns={setReturns} products={products} setProducts={setProducts} settings={settings} addAudit={addAudit} currentUser={currentUser} t={t} siteId={currentUser?.site_id || DEFAULT_SITE_ID} />
+                  : <CustomerReturns orders={orders} returns={returns} setReturns={setReturns} products={products} setProducts={setProducts} addAudit={addAudit} currentUser={currentUser} settings={settings} t={t} />
             } />
             <Route path="reports" element={
               <ProtectedRoute allowedRoles={['manager', 'admin']}>

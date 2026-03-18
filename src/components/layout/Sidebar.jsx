@@ -43,6 +43,7 @@ const navByRole = {
     { key: 'cash', l: 'Cash Management', i: '💰' },
     { type: 'group', l: 'Order Info' },
     { key: 'orders', l: 'My Orders', i: '🧾' },
+    { key: 'returns', l: 'Returns', i: '↩️' },
     { key: 'pickup', l: 'Pickup Orders', i: '📦' },
     { key: 'hardware', l: 'Hardware', i: '🖨️' },
   ],

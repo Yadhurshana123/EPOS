@@ -1,15 +1,33 @@
 import { Badge, Card, StatCard, Table } from '@/components/ui'
 import { fmt } from '@/lib/utils'
 
-export const ManagerDashboard = ({ orders, products, users, counters, t, settings }) => {
-  const storeOrders = orders
-  const todayRevenue = storeOrders.reduce((s, o) => s + o.total, 0)
+function getOrderItems(o) {
+  const items = o?.items || o?.order_items || []
+  return Array.isArray(items) ? items : []
+}
+
+function toItemName(i) {
+  return i?.product_name || i?.name || 'Unknown'
+}
+
+function toItemQty(i) {
+  return i?.quantity ?? i?.qty ?? 0
+}
+
+export const ManagerDashboard = ({ orders = [], products = [], users = [], counters = [], t, settings }) => {
+  const storeOrders = Array.isArray(orders) ? orders : []
+  const todayRevenue = storeOrders.reduce((s, o) => s + (o.total ?? 0), 0)
   const pendingOrders = storeOrders.filter(o => o.status === 'preparing').length
-  const staffCount = users.filter(u => u.role === 'cashier').length
-  const lowStock = products.filter(p => p.stock < 10).length
+  const staffCount = (users || []).filter(u => u.role === 'cashier').length
+  const lowStock = (products || []).filter(p => (p.stock ?? 0) < 10).length
 
   const topP = {}
-  storeOrders.forEach(o => o.items.forEach(i => { topP[i.name] = (topP[i.name] || 0) + i.qty }))
+  storeOrders.forEach(o => {
+    getOrderItems(o).forEach(i => {
+      const name = toItemName(i)
+      topP[name] = (topP[name] || 0) + toItemQty(i)
+    })
+  })
   const topProducts = Object.entries(topP).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
   return (
@@ -25,7 +43,7 @@ export const ManagerDashboard = ({ orders, products, users, counters, t, setting
         <StatCard t={t} title="Pending Orders" value={pendingOrders} color={t.yellow} icon="⏳" />
         <StatCard t={t} title="Staff Active" value={staffCount} color={t.green} icon="👥" />
         <StatCard t={t} title="Low Stock Items" value={lowStock} color={t.red} icon="⚠️" />
-        <StatCard t={t} title="Active Counters" value={counters.filter(c => c.active).length} color={t.teal} icon="🏪" />
+        <StatCard t={t} title="Active Counters" value={(counters || []).filter(c => c.active).length} color={t.teal} icon="🏪" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="grid-2">
@@ -43,7 +61,7 @@ export const ManagerDashboard = ({ orders, products, users, counters, t, setting
 
         <Card t={t}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 14 }}>🏪 Counter Performance</div>
-          {counters.map(c => {
+          {(counters || []).map(c => {
             const rev = storeOrders.filter(o => o.counter === c.name).reduce((s, o) => s + o.total, 0)
             const cnt = storeOrders.filter(o => o.counter === c.name).length
             const pct = todayRevenue > 0 ? Math.round(rev / todayRevenue * 100) : 0
@@ -66,13 +84,13 @@ export const ManagerDashboard = ({ orders, products, users, counters, t, setting
 
         <Card t={t}>
           <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 14 }}>⚠️ Stock Alerts</div>
-          {products.filter(p => p.stock < 15).sort((a, b) => a.stock - b.stock).slice(0, 8).map(p => (
+          {(products || []).filter(p => (p.stock ?? 0) < 15).sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)).slice(0, 8).map(p => (
             <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${t.border}` }}>
               <span style={{ fontSize: 13, color: t.text }}>{p.emoji} {p.name}</span>
               <span style={{ fontSize: 12, fontWeight: 800, color: p.stock < 5 ? t.red : p.stock < 10 ? t.yellow : t.text3 }}>{p.stock} left</span>
             </div>
           ))}
-          {products.filter(p => p.stock < 15).length === 0 && (
+          {(products || []).filter(p => (p.stock ?? 0) < 15).length === 0 && (
             <div style={{ color: t.green, fontSize: 13 }}>✅ All stock levels healthy</div>
           )}
         </Card>
@@ -83,11 +101,11 @@ export const ManagerDashboard = ({ orders, products, users, counters, t, setting
             t={t}
             cols={['ID', 'Customer', 'Type', 'Total', 'Status']}
             rows={storeOrders.slice(0, 6).map(o => [
-              <span style={{ fontSize: 11, fontFamily: 'monospace' }}>{o.id}</span>,
-              o.customerName,
-              <Badge t={t} text={o.orderType || 'in-store'} color={o.orderType === 'delivery' ? 'teal' : o.orderType === 'pickup' ? 'blue' : 'green'} />,
+              <span key={o.id} style={{ fontSize: 11, fontFamily: 'monospace' }}>{o.order_number || o.id}</span>,
+              o.customer_name || o.customerName || 'Walk-in',
+              <Badge t={t} key="type" text={o.order_type || o.orderType || 'in-store'} color={(o.order_type || o.orderType) === 'delivery' ? 'teal' : (o.order_type || o.orderType) === 'pickup' ? 'blue' : 'green'} />,
               fmt(o.total, settings?.sym),
-              <Badge t={t} text={o.status} color={o.status === 'completed' ? 'green' : o.status === 'preparing' ? 'yellow' : 'red'} />,
+              <Badge t={t} key="status" text={o.status} color={o.status === 'completed' ? 'green' : o.status === 'preparing' ? 'yellow' : 'red'} />,
             ])}
             empty="No orders yet"
           />

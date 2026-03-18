@@ -16,18 +16,28 @@ const exportCsvHelper = (filename, headers, rows) => {
   notify('Report exported as CSV!', 'success')
 }
 
-export const ReportsPage = ({ orders, users, products, t, settings }) => {
+function getOrderItems(o) {
+  const items = o?.items || o?.order_items || []
+  return Array.isArray(items) ? items : []
+}
+
+function itemName(i) { return i?.product_name || i?.name || 'Unknown' }
+function itemQty(i) { return i?.quantity ?? i?.qty ?? 0 }
+function itemPrice(i) { return i?.unit_price ?? i?.price ?? 0 }
+
+export const ReportsPage = ({ orders = [], users = [], products = [], t, settings }) => {
   const [activeReport, setActiveReport] = useState('sales-category')
   const [dateFrom, setDateFrom] = useState(dayjs().subtract(30, 'day').format('YYYY-MM-DD'))
   const [dateTo, setDateTo] = useState(dayjs().format('YYYY-MM-DD'))
 
-  const filtered = orders.filter(o => {
-    if (!o.date) return true
-    const d = dayjs(o.date, 'DD/MM/YYYY, HH:mm:ss')
+  const filtered = (Array.isArray(orders) ? orders : []).filter(o => {
+    const dateStr = o.date || o.created_at
+    if (!dateStr) return true
+    const d = dayjs(dateStr).isValid() ? dayjs(dateStr) : dayjs(dateStr, 'DD/MM/YYYY, HH:mm:ss')
     return d.isValid() && d.isAfter(dayjs(dateFrom).subtract(1, 'day')) && d.isBefore(dayjs(dateTo).add(1, 'day'))
   })
 
-  const totalRev = filtered.reduce((s, o) => s + o.total, 0)
+  const totalRev = filtered.reduce((s, o) => s + (o.total ?? 0), 0)
   const colors = ['#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0d9488']
 
   const reports = [
@@ -42,19 +52,25 @@ export const ReportsPage = ({ orders, users, products, t, settings }) => {
   ]
 
   const catRev = {}
-  filtered.forEach(o => o.items.forEach(i => {
-    const p = products.find(x => x.name === i.name)
-    const cat = p?.category || 'Other'
-    catRev[cat] = (catRev[cat] || 0) + i.price * i.qty
-  }))
+  filtered.forEach(o => {
+    getOrderItems(o).forEach(i => {
+      const name = itemName(i)
+      const p = (products || []).find(x => x.name === name)
+      const cat = p?.category || 'Other'
+      catRev[cat] = (catRev[cat] || 0) + itemPrice(i) * itemQty(i)
+    })
+  })
   const totalCatRev = Object.values(catRev).reduce((s, v) => s + v, 0)
 
   const productSales = {}
-  filtered.forEach(o => o.items.forEach(i => {
-    if (!productSales[i.name]) productSales[i.name] = { qty: 0, rev: 0 }
-    productSales[i.name].qty += i.qty
-    productSales[i.name].rev += i.price * i.qty
-  }))
+  filtered.forEach(o => {
+    getOrderItems(o).forEach(i => {
+      const name = itemName(i)
+      if (!productSales[name]) productSales[name] = { qty: 0, rev: 0 }
+      productSales[name].qty += itemQty(i)
+      productSales[name].rev += itemPrice(i) * itemQty(i)
+    })
+  })
   const topProducts = Object.entries(productSales).sort((a, b) => b[1].rev - a[1].rev)
 
   const counterRev = {}
@@ -62,26 +78,26 @@ export const ReportsPage = ({ orders, users, products, t, settings }) => {
     const c = o.counter || 'Unknown'
     if (!counterRev[c]) counterRev[c] = { orders: 0, rev: 0 }
     counterRev[c].orders++
-    counterRev[c].rev += o.total
+    counterRev[c].rev += o.total ?? 0
   })
 
   const operatorPerf = {}
   filtered.forEach(o => {
-    const name = o.cashierName || 'Unknown'
+    const name = o.cashier_name || o.cashierName || 'Unknown'
     if (!operatorPerf[name]) operatorPerf[name] = { orders: 0, rev: 0 }
     operatorPerf[name].orders++
-    operatorPerf[name].rev += o.total
+    operatorPerf[name].rev += o.total ?? 0
   })
   const sortedOperators = Object.entries(operatorPerf).sort((a, b) => b[1].rev - a[1].rev)
 
   const returnOrders = filtered.filter(o => o.status === 'refunded')
-  const discountOrders = filtered.filter(o => (o.discountAmt || 0) > 0 || (o.couponDiscount || 0) > 0)
+  const discountOrders = filtered.filter(o => (o.discount_amount ?? o.discountAmt ?? 0) > 0 || (o.couponDiscount ?? 0) > 0)
 
-  const cashOrders = filtered.filter(o => o.payment === 'Cash' || o.payment === 'Split')
-  const cashReceived = cashOrders.reduce((s, o) => s + (o.payment === 'Cash' ? (o.cashGiven || 0) : (o.splitCash || 0)), 0)
-  const cashChangeGiven = cashOrders.reduce((s, o) => s + (o.cashChange || 0), 0)
-  const cashSales = cashOrders.reduce((s, o) => s + o.total, 0)
-  const cashRefunds = returnOrders.filter(o => o.payment === 'Cash').reduce((s, o) => s + o.total, 0)
+  const cashOrders = filtered.filter(o => (o.payment_method || o.payment) === 'Cash' || (o.payment_method || o.payment) === 'Split')
+  const cashReceived = cashOrders.reduce((s, o) => s + ((o.payment_method || o.payment) === 'Cash' ? (o.payment_details?.cash_given ?? o.cashGiven ?? 0) : (o.payment_details?.split_cash ?? o.splitCash ?? 0)), 0)
+  const cashChangeGiven = cashOrders.reduce((s, o) => s + (o.payment_details?.cash_change ?? o.cashChange ?? 0), 0)
+  const cashSales = cashOrders.reduce((s, o) => s + (o.total ?? 0), 0)
+  const cashRefunds = returnOrders.filter(o => (o.payment_method || o.payment) === 'Cash').reduce((s, o) => s + (o.total ?? 0), 0)
 
   const handleExport = () => {
     if (activeReport === 'sales-category') {
@@ -93,19 +109,20 @@ export const ReportsPage = ({ orders, users, products, t, settings }) => {
     } else if (activeReport === 'sales-operator') {
       exportCsvHelper('sales-by-operator.csv', ['Operator', 'Orders', 'Revenue'], sortedOperators.map(([name, s]) => [name, s.orders, s.rev.toFixed(2)]))
     } else if (activeReport === 'returns') {
-      exportCsvHelper('returns-summary.csv', ['Order ID', 'Total', 'Date', 'Counter', 'Cashier'], returnOrders.map(o => [o.id, o.total.toFixed(2), o.date, o.counter, o.cashierName]))
+      exportCsvHelper('returns-summary.csv', ['Order ID', 'Total', 'Date', 'Counter', 'Cashier'], returnOrders.map(o => [o.order_number || o.id, (o.total ?? 0).toFixed(2), o.date || o.created_at, o.counter || 'Unknown', o.cashier_name || o.cashierName || 'Unknown']))
     } else if (activeReport === 'stock') {
-      exportCsvHelper('stock-report.csv', ['Product', 'Category', 'Stock', 'Status'], products.map(p => [p.name, p.category || 'Other', p.stock, p.stock === 0 ? 'Out' : p.stock < 15 ? 'Low' : 'OK']))
+      exportCsvHelper('stock-report.csv', ['Product', 'Category', 'Stock', 'Status'], (products || []).map(p => [p.name, p.category || 'Other', p.stock ?? 0, (p.stock ?? 0) === 0 ? 'Out' : (p.stock ?? 0) < 15 ? 'Low' : 'OK']))
     } else if (activeReport === 'discounts') {
       const couponUse = {}
       discountOrders.forEach(o => {
-        if (o.couponCode) {
-          if (!couponUse[o.couponCode]) couponUse[o.couponCode] = { count: 0, savings: 0 }
-          couponUse[o.couponCode].count++
-          couponUse[o.couponCode].savings += o.couponDiscount || 0
+        const code = o.coupon_code || o.couponCode
+        if (code) {
+          if (!couponUse[code]) couponUse[code] = { count: 0, savings: 0 }
+          couponUse[code].count++
+          couponUse[code].savings += o.couponDiscount ?? 0
         }
       })
-      const totalDiscountAmt = discountOrders.reduce((sum, o) => sum + (o.discountAmt || 0) + (o.couponDiscount || 0), 0)
+      const totalDiscountAmt = discountOrders.reduce((sum, o) => sum + (o.discount_amount ?? o.discountAmt ?? 0) + (o.couponDiscount ?? 0), 0)
       const rows = [...Object.entries(couponUse).map(([code, s]) => ['Coupon', code, s.count, s.savings.toFixed(2)])]
       if (rows.length === 0) rows.push(['Discount', 'N/A', discountOrders.length, totalDiscountAmt.toFixed(2)])
       else rows.push(['Total Discounts', 'All', discountOrders.length, totalDiscountAmt.toFixed(2)])
@@ -119,7 +136,7 @@ export const ReportsPage = ({ orders, users, products, t, settings }) => {
         ['Net Cash', (cashSales - cashRefunds).toFixed(2)]
       ])
     } else {
-      exportCsvHelper('orders-report.csv', ['Order ID', 'Customer', 'Total', 'Payment', 'Date', 'Counter', 'Status'], filtered.map(o => [o.id, o.customerName, o.total, o.payment, o.date, o.counter, o.status]))
+      exportCsvHelper('orders-report.csv', ['Order ID', 'Customer', 'Total', 'Payment', 'Date', 'Counter', 'Status'], filtered.map(o => [o.order_number || o.id, o.customer_name || o.customerName || 'Walk-in', o.total ?? 0, o.payment_method || o.payment || 'N/A', o.date || o.created_at, o.counter || 'Unknown', o.status]))
     }
   }
 
@@ -312,21 +329,21 @@ export const ReportsPage = ({ orders, users, products, t, settings }) => {
             <Card t={t}>
               <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 16 }}>📦 Stock Overview</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <StatCard t={t} title="Total Products" value={products.length} color={t.blue} icon="📦" />
-                <StatCard t={t} title="Total Units" value={products.reduce((s, p) => s + p.stock, 0)} color={t.green} icon="🔢" />
-                <StatCard t={t} title="Low Stock" value={products.filter(p => p.stock > 0 && p.stock < 15).length} color={t.yellow} icon="⚠️" />
-                <StatCard t={t} title="Out of Stock" value={products.filter(p => p.stock === 0).length} color={t.red} icon="❌" />
+                <StatCard t={t} title="Total Products" value={(products || []).length} color={t.blue} icon="📦" />
+                <StatCard t={t} title="Total Units" value={(products || []).reduce((s, p) => s + (p.stock ?? 0), 0)} color={t.green} icon="🔢" />
+                <StatCard t={t} title="Low Stock" value={(products || []).filter(p => (p.stock ?? 0) > 0 && (p.stock ?? 0) < 15).length} color={t.yellow} icon="⚠️" />
+                <StatCard t={t} title="Out of Stock" value={(products || []).filter(p => (p.stock ?? 0) === 0).length} color={t.red} icon="❌" />
               </div>
             </Card>
             <Card t={t}>
               <div style={{ fontSize: 14, fontWeight: 800, color: t.text, marginBottom: 16 }}>⚠️ Critical Stock Items</div>
-              {products.filter(p => p.stock < 15).sort((a, b) => a.stock - b.stock).slice(0, 10).map(p => (
+              {(products || []).filter(p => (p.stock ?? 0) < 15).sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)).slice(0, 10).map(p => (
                 <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: `1px solid ${t.border}` }}>
                   <span style={{ fontSize: 13, color: t.text }}>{p.emoji} {p.name}</span>
-                  <Badge t={t} text={`${p.stock} units`} color={p.stock === 0 ? 'red' : p.stock < 5 ? 'red' : 'yellow'} />
+                  <Badge t={t} text={`${p.stock ?? 0} units`} color={(p.stock ?? 0) === 0 ? 'red' : (p.stock ?? 0) < 5 ? 'red' : 'yellow'} />
                 </div>
               ))}
-              {products.filter(p => p.stock < 15).length === 0 && <div style={{ color: t.green, fontSize: 13 }}>✅ All stock levels healthy</div>}
+              {(products || []).filter(p => (p.stock ?? 0) < 15).length === 0 && <div style={{ color: t.green, fontSize: 13 }}>✅ All stock levels healthy</div>}
             </Card>
           </>
         )}

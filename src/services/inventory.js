@@ -11,15 +11,80 @@ export async function fetchInventory(siteId) {
   return null
 }
 
+/** Receive stock: add quantity to inventory (creates row if needed) */
+export async function receiveStock(productId, siteId, quantity, notes, userId) {
+  if (!isSupabaseConfigured()) return null
+  const { data: existing } = await supabase.from('inventory')
+    .select('id, stock_on_hand')
+    .match({ product_id: productId, site_id: siteId })
+    .maybeSingle()
+  const newQty = (existing?.stock_on_hand ?? 0) + quantity
+  const { error: mvError } = await supabase.from('inventory_movements').insert({
+    product_id: productId, to_site_id: siteId, quantity, movement_type: 'receive', notes, created_by: userId,
+  })
+  if (mvError) throw mvError
+  if (existing) {
+    const { data, error } = await supabase.from('inventory')
+      .update({ stock_on_hand: newQty, updated_at: new Date().toISOString() })
+      .match({ product_id: productId, site_id: siteId })
+      .select().single()
+    if (error) throw error
+    return data
+  }
+  const { data, error } = await supabase.from('inventory')
+    .insert({ product_id: productId, site_id: siteId, stock_on_hand: newQty })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+/** Deduct stock (sale, damage, loss): reduce inventory */
+export async function deductStock(productId, siteId, quantity, type, notes, userId) {
+  if (!isSupabaseConfigured()) return null
+  const qty = -Math.abs(quantity)
+  const { data: existing } = await supabase.from('inventory')
+    .select('stock_on_hand')
+    .match({ product_id: productId, site_id: siteId })
+    .maybeSingle()
+  if (!existing) throw new Error('No inventory record for product at this site')
+  const newQty = Math.max(0, existing.stock_on_hand + qty)
+  const { error: mvError } = await supabase.from('inventory_movements').insert({
+    product_id: productId, to_site_id: siteId, quantity: qty, movement_type: type, notes, created_by: userId,
+  })
+  if (mvError) throw mvError
+  const { data, error } = await supabase.from('inventory')
+    .update({ stock_on_hand: newQty, updated_at: new Date().toISOString() })
+    .match({ product_id: productId, site_id: siteId })
+    .select().single()
+  if (error) throw error
+  return data
+}
+
+/** Add stock (return restock) */
+export async function addStock(productId, siteId, quantity, notes, userId) {
+  return receiveStock(productId, siteId, quantity, notes || 'Return restock', userId)
+}
+
 export async function adjustStock(productId, siteId, quantity, type, notes, userId) {
   if (isSupabaseConfigured()) {
     const { error: mvError } = await supabase.from('inventory_movements').insert({
       product_id: productId, to_site_id: siteId, quantity, movement_type: type, notes, created_by: userId,
     })
     if (mvError) throw mvError
-    const { data, error } = await supabase.from('inventory')
-      .update({ stock_on_hand: quantity, updated_at: new Date().toISOString() })
+    const { data: existing } = await supabase.from('inventory')
+      .select('id')
       .match({ product_id: productId, site_id: siteId })
+      .maybeSingle()
+    if (existing) {
+      const { data, error } = await supabase.from('inventory')
+        .update({ stock_on_hand: quantity, updated_at: new Date().toISOString() })
+        .match({ product_id: productId, site_id: siteId })
+        .select().single()
+      if (error) throw error
+      return data
+    }
+    const { data, error } = await supabase.from('inventory')
+      .insert({ product_id: productId, site_id: siteId, stock_on_hand: quantity })
       .select().single()
     if (error) throw error
     return data
@@ -95,27 +160,27 @@ export async function transferStock(productId, fromSiteId, toSiteId, quantity, n
 }
 
 export async function fetchMovements(productId, siteId) {
-  if (isSupabaseConfigured()) {
-    let q = supabase.from('inventory_movements').select(`
-      *,
-      product:products(name, emoji),
-      from_site:sites!inventory_movements_from_site_id_fkey(name),
-      to_site:sites!inventory_movements_to_site_id_fkey(name)
-    `)
-    if (error) throw error
-    return data
-  }
-  return null
+  if (!isSupabaseConfigured()) return null
+  let q = supabase.from('inventory_movements').select(`
+    *,
+    product:products(name, emoji),
+    from_site:sites!inventory_movements_from_site_id_fkey(name),
+    to_site:sites!inventory_movements_to_site_id_fkey(name)
+  `)
+  if (productId) q = q.eq('product_id', productId)
+  if (siteId) q = q.or(`from_site_id.eq.${siteId},to_site_id.eq.${siteId}`)
+  const { data, error } = await q.order('created_at', { ascending: false }).limit(100)
+  if (error) throw error
+  return data
 }
+
 export async function fetchTransfers() {
-  if (isSupabaseConfigured()) {
-    const { data, error } = await supabase
-      .from('inventory_movements')
-      .select('*, products(*), from_sites:sites!from_site_id(name), to_sites:sites!to_site_id(name)')
-      .eq('movement_type', 'transfer')
-      .order('created_at', { ascending: false })
-    if (error) throw error
-    return data
-  }
-  return []
+  if (!isSupabaseConfigured()) return []
+  const { data, error } = await supabase
+    .from('inventory_movements')
+    .select('*, products(*), from_site:sites!inventory_movements_from_site_id_fkey(name), to_site:sites!inventory_movements_to_site_id_fkey(name)')
+    .eq('movement_type', 'transfer')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return data || []
 }

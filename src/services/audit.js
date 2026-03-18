@@ -1,10 +1,15 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { ts } from '@/lib/utils'
 
+function isValidUuid(val) {
+  return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val)
+}
+
 export async function logAudit(user, action, module, details = '') {
   if (isSupabaseConfigured()) {
+    const uid = isValidUuid(user?.id) ? user.id : null
     const { error } = await supabase.from('audit_logs').insert({
-      user_id: user?.id, user_name: user?.name || 'System', user_role: user?.role || 'system',
+      user_id: uid, user_name: user?.name || 'System', user_role: user?.role || 'system',
       action, module, details,
     })
     if (error) console.error('Audit log failed:', error)

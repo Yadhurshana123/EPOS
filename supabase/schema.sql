@@ -105,6 +105,7 @@ CREATE TABLE products (
   image_url TEXT,
   emoji TEXT DEFAULT '📦',
   returnable BOOLEAN DEFAULT true,
+  track_serial BOOLEAN DEFAULT false,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -181,6 +182,7 @@ CREATE TABLE orders (
   tax_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
   discount_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
   loyalty_discount NUMERIC(10,2) NOT NULL DEFAULT 0,
+  manual_discount_pct NUMERIC(5,2) DEFAULT 0,
   delivery_charge NUMERIC(10,2) NOT NULL DEFAULT 0,
   total NUMERIC(10,2) NOT NULL DEFAULT 0,
   payment_method TEXT,
@@ -203,7 +205,9 @@ CREATE TABLE order_items (
   quantity INTEGER NOT NULL DEFAULT 1,
   unit_price NUMERIC(10,2) NOT NULL,
   discount_pct NUMERIC(5,2) DEFAULT 0,
+  override_price NUMERIC(10,2),
   line_total NUMERIC(10,2) NOT NULL,
+  serial_numbers JSONB DEFAULT '[]',
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -300,6 +304,28 @@ CREATE TABLE coupons (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE site_prices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  price NUMERIC(10,2) NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(product_id, site_id)
+);
+
+CREATE TABLE promotions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  category_id UUID REFERENCES categories(id) ON DELETE CASCADE,
+  promo_price NUMERIC(10,2) NOT NULL,
+  start_date TIMESTAMPTZ NOT NULL,
+  end_date TIMESTAMPTZ NOT NULL,
+  active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE settings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   venue_id UUID REFERENCES venues(id),
@@ -332,6 +358,34 @@ CREATE TABLE parked_bills (
   items JSONB NOT NULL DEFAULT '[]',
   notes TEXT,
   parked_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  amount NUMERIC(10,2) NOT NULL,
+  method TEXT NOT NULL CHECK (method IN ('cash', 'card', 'split_cash', 'split_card', 'qr', 'voucher', 'refund')),
+  reference_id TEXT,
+  details JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- -----------------------------------------------------------------------------
+-- SERIAL NUMBER TRACKING (high-value items)
+-- -----------------------------------------------------------------------------
+
+CREATE TABLE serial_numbers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+  site_id UUID NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  serial_number TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_stock' CHECK (status IN ('in_stock', 'sold', 'returned', 'damaged', 'lost')),
+  order_item_id UUID REFERENCES order_items(id) ON DELETE SET NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(product_id, serial_number)
 );
 
 -- =============================================================================
@@ -438,6 +492,12 @@ CREATE INDEX idx_banners_dates ON banners(start_date, end_date);
 CREATE INDEX idx_coupons_code ON coupons(code);
 CREATE INDEX idx_coupons_active ON coupons(active);
 
+CREATE INDEX idx_site_prices_product_id ON site_prices(product_id);
+CREATE INDEX idx_site_prices_site_id ON site_prices(site_id);
+CREATE INDEX idx_promotions_product_id ON promotions(product_id);
+CREATE INDEX idx_promotions_category_id ON promotions(category_id);
+CREATE INDEX idx_promotions_dates ON promotions(start_date, end_date);
+
 -- settings
 CREATE INDEX idx_settings_venue_id ON settings(venue_id);
 CREATE INDEX idx_settings_site_id ON settings(site_id);
@@ -454,6 +514,16 @@ CREATE INDEX idx_parked_bills_site_id ON parked_bills(site_id);
 CREATE INDEX idx_parked_bills_counter_id ON parked_bills(counter_id);
 CREATE INDEX idx_parked_bills_cashier_id ON parked_bills(cashier_id);
 CREATE INDEX idx_parked_bills_parked_at ON parked_bills(parked_at);
+
+-- payments
+CREATE INDEX idx_payments_order_id ON payments(order_id);
+
+-- serial_numbers
+CREATE INDEX idx_serial_numbers_product_id ON serial_numbers(product_id);
+CREATE INDEX idx_serial_numbers_site_id ON serial_numbers(site_id);
+CREATE INDEX idx_serial_numbers_serial_number ON serial_numbers(serial_number);
+CREATE INDEX idx_serial_numbers_status ON serial_numbers(status);
+CREATE INDEX idx_serial_numbers_order_item_id ON serial_numbers(order_item_id);
 
 -- Remove duplicate index (inventory_product_id was listed twice)
 DROP INDEX IF EXISTS idx_inventory_product_id;
@@ -508,6 +578,10 @@ CREATE TRIGGER trigger_returns_updated_at
 
 CREATE TRIGGER trigger_settings_updated_at
   BEFORE UPDATE ON settings
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER trigger_serial_numbers_updated_at
+  BEFORE UPDATE ON serial_numbers
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- 2. Get authenticated user's own profile (bypasses RLS, safe via auth.uid())
@@ -599,9 +673,13 @@ ALTER TABLE cash_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cash_movements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE banners ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_prices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE promotions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parked_bills ENABLE ROW LEVEL SECURITY;
+ALTER TABLE serial_numbers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 
 -- -----------------------------------------------------------------------------
 -- RLS POLICIES
@@ -800,6 +878,16 @@ CREATE POLICY "Admins can manage coupons"
   ON coupons FOR ALL
   USING (get_my_role() = 'admin');
 
+CREATE POLICY "Everyone can read site_prices"
+  ON site_prices FOR SELECT USING (true);
+CREATE POLICY "Managers and admins can manage site_prices"
+  ON site_prices FOR ALL USING (get_my_role() IN ('admin', 'manager'));
+
+CREATE POLICY "Everyone can read promotions"
+  ON promotions FOR SELECT USING (true);
+CREATE POLICY "Managers and admins can manage promotions"
+  ON promotions FOR ALL USING (get_my_role() IN ('admin', 'manager'));
+
 CREATE POLICY "Staff can read banners"
   ON banners FOR SELECT
   USING (get_my_role() IN ('admin', 'manager', 'cashier', 'staff'));
@@ -819,6 +907,22 @@ CREATE POLICY "Cashiers can manage cash_movements"
 CREATE POLICY "Cashiers can manage parked_bills"
   ON parked_bills FOR ALL
   USING (get_my_role() IN ('admin', 'manager', 'cashier'));
+
+CREATE POLICY "Everyone can read serial_numbers"
+  ON serial_numbers FOR SELECT
+  USING (true);
+
+CREATE POLICY "Managers, cashiers and admins can manage serial_numbers"
+  ON serial_numbers FOR ALL
+  USING (get_my_role() IN ('admin', 'manager', 'cashier'));
+
+CREATE POLICY "Staff can read payments"
+  ON payments FOR SELECT
+  USING (get_my_role() IN ('admin', 'manager', 'cashier'));
+
+CREATE POLICY "Cashiers can create payments"
+  ON payments FOR INSERT
+  WITH CHECK (get_my_role() IN ('admin', 'manager', 'cashier'));
 
 -- =============================================================================
 -- END OF MIGRATION

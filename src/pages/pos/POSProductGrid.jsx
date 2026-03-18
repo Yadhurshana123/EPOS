@@ -7,18 +7,35 @@ export function POSProductGrid({
   search, setSearch, cat, setCat, filteredProds, favProds,
   getItemDiscount, addToCart, scanMsg,
   parkBill, parked, recallBill, showParkedDropdown, setShowParkedDropdown,
-  setShowBarcodeInput, settings, t,
+  setShowBarcodeInput, setShowReprint, setShowReturnModal,
+  loadOrderInput, setLoadOrderInput, loadOrderForReturn, loadOrderLoading, loadedOrderForReturn,
+  returnProcessMode,
+  settings, t,
 }) {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: t.posLeft, borderRight: `1px solid ${t.border}` }} className="pos-left">
       <div style={{ padding: '8px 10px', borderBottom: `1px solid ${t.border}`, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search / SKU..." style={{ width: '100%', background: t.input, border: `1px solid ${t.border}`, borderRadius: 9, padding: '8px 14px 8px 34px', color: t.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
-          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
-        </div>
-        <button onClick={() => setShowBarcodeInput(true)} style={{ padding: '8px 12px', background: t.blueBg, border: `1px solid ${t.blueBorder}`, borderRadius: 9, color: t.blue, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          📷 Scan
-        </button>
+        {loadedOrderForReturn ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 200, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: t.yellow, background: t.yellowBg, padding: '6px 10px', borderRadius: 8, border: `1px solid ${t.yellowBorder}` }}>
+              {returnProcessMode === 'exchange' ? '↔ Exchange: Add replacement items below' : `↩️ Return: ${loadedOrderForReturn.order_number || loadedOrderForReturn.id}`}
+            </span>
+          </div>
+        ) : (
+          <>
+            <div style={{ position: 'relative', flex: 1, minWidth: 160 }}>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search / SKU..." style={{ width: '100%', background: t.input, border: `1px solid ${t.border}`, borderRadius: 9, padding: '8px 14px 8px 34px', color: t.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' }} />
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <input value={loadOrderInput} onChange={e => setLoadOrderInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && loadOrderForReturn()} placeholder="Order #" style={{ width: 90, background: t.input, border: `1px solid ${t.border}`, borderRadius: 9, padding: '8px 10px', color: t.text, fontSize: 12, outline: 'none' }} />
+              <button onClick={() => loadOrderForReturn()} disabled={loadOrderLoading || !loadOrderInput?.trim()} style={{ padding: '8px 12px', background: t.yellowBg, border: `1px solid ${t.yellowBorder}`, borderRadius: 9, color: t.yellow, fontSize: 12, fontWeight: 800, cursor: loadOrderLoading || !loadOrderInput?.trim() ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>{loadOrderLoading ? '...' : '↩️ Load'}</button>
+            </div>
+          </>
+        )}
+        <button onClick={() => setShowBarcodeInput(true)} style={{ padding: '8px 12px', background: t.blueBg, border: `1px solid ${t.blueBorder}`, borderRadius: 9, color: t.blue, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>📷 Scan</button>
+        {setShowReturnModal ? <button onClick={() => setShowReturnModal(true)} style={{ padding: '8px 12px', background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 9, color: t.text2, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>↩️ Return</button> : null}
+        {setShowReprint ? <button onClick={() => setShowReprint(true)} style={{ padding: '8px 12px', background: t.bg3, border: `1px solid ${t.border}`, borderRadius: 9, color: t.text2, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}>🖨️ Reprint</button> : null}
         {scanMsg && <span style={{ fontSize: 12, color: t.green, fontWeight: 700 }}>{scanMsg}</span>}
         <button onClick={parkBill} style={{ padding: '8px 12px', background: t.yellowBg, border: `1px solid ${t.yellowBorder}`, borderRadius: 9, color: t.yellow, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>⏸ Park</button>
         {parked.length > 0 && (

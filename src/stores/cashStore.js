@@ -113,7 +113,7 @@ export const useCashStore = create(
               session: { ...state.session, id: dbSession.id, _supabaseId: dbSession.id }
             }))
             // Record the opening movement
-            await recordCashMovement(dbSession.id, 'open', amount, null, 'Opening float', user?.id)
+            await recordCashMovement(dbSession.id, 'float', amount, null, 'Opening float', user?.id)
           } catch (err) {
             console.error('Failed to save session to Supabase:', err)
           }

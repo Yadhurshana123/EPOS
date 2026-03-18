@@ -1,10 +1,19 @@
+import { useRef } from 'react'
+import { useReactToPrint } from 'react-to-print'
 import { Modal } from '@/components/ui'
 import { Btn } from '@/components/ui'
 import { fmt } from '@/lib/utils'
 
-export const ReceiptModal = ({ order, settings, onClose, t }) => (
+export const ReceiptModal = ({ order, settings, onClose, t }) => {
+  const receiptRef = useRef(null)
+  const handlePrint = useReactToPrint({
+    content: () => receiptRef.current,
+    documentTitle: `Receipt-${order?.id || order?.order_number || 'order'}`,
+    pageStyle: '@page { size: 80mm auto; margin: 4mm; }',
+  })
+  return (
   <Modal t={t} title="✓ Payment Successful" onClose={onClose} width={440}>
-    <div style={{ background: '#fffbf5', borderRadius: 10, padding: 24, fontFamily: 'monospace', border: '1px solid #e2d9c5' }}>
+    <div ref={receiptRef} style={{ background: '#fffbf5', borderRadius: 10, padding: 24, fontFamily: 'monospace', border: '1px solid #e2d9c5' }}>
       <div style={{ textAlign: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 22, fontWeight: 900 }}>{settings.storeName}</div>
         <div style={{ fontSize: 11, color: '#666' }}>{settings.storeAddress}</div>
@@ -39,7 +48,8 @@ export const ReceiptModal = ({ order, settings, onClose, t }) => (
     </div>
     <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
       <Btn t={t} variant="secondary" onClick={onClose} style={{ flex: 1 }}>Close</Btn>
-      <Btn t={t} onClick={() => window.print()} style={{ flex: 1 }}>🖨️ Print Receipt</Btn>
+      <Btn t={t} onClick={handlePrint} style={{ flex: 1 }}>🖨️ Print Receipt</Btn>
     </div>
   </Modal>
-)
+  )
+}

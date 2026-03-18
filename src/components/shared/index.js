@@ -1,3 +1,4 @@
+export { BarcodeScanner } from './BarcodeScanner'
 export { NotificationCenter, notify } from './NotificationCenter'
 export { ErrorBoundary } from './ErrorBoundary'
 export { ImgWithFallback } from './ImgWithFallback'
