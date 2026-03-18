@@ -8,20 +8,16 @@ function toAppFormat(p) {
     ...rest,
     price: base_price ?? p.price,
     image: image_url ?? p.image,
-    image_url: image_url ?? p.image
+    image_url: image_url ?? p.image,
+    taxPct: p.tax_pct ?? p.taxPct ?? 20,
   }
 }
 
-/**
- * Columns that exist on `products` in schema.sql (before dynamic_category_system.sql).
- * Sending subcategory_id / dynamic_attributes on DBs that never ran that migration causes POST 400.
- */
-function toDbFormatBase(product) {
-  const status = product.status ?? 'active'
-  const safeStatus = status === 'inactive' ? 'inactive' : 'active'
-  return {
-    sku: String(product.sku ?? '').trim() || 'SKU-PENDING',
-    name: String(product.name ?? '').trim() || 'Unnamed product',
+/** Map app product (price, image) to DB format (base_price, image_url) - only schema columns */
+function toDbFormat(product) {
+  const db = {
+    sku: product.sku,
+    name: product.name,
     description: product.description ?? product.shortDescription ?? product.longDescription ?? null,
     category_id: product.category_id || null,
     brand: product.brand || null,
@@ -35,6 +31,17 @@ function toDbFormatBase(product) {
     image_url: product.image ?? product.image_url ?? null,
     emoji: product.emoji ?? '📦',
     returnable: product.returnable !== false,
+    track_serial: product.track_serial === true
+  }
+
+  if (product.category_id !== undefined) {
+    db.category_id = product.category_id || null
+  }
+  if (product.subcategory_id !== undefined) {
+    db.subcategory_id = product.subcategory_id || null
+  }
+  if (product.taxPct !== undefined || product.tax_pct !== undefined) {
+    db.tax_pct = product.taxPct ?? product.tax_pct ?? 20
     track_serial: product.track_serial === true,
   }
 }
@@ -107,16 +114,38 @@ async function applyExtendedProductFields(productId, product) {
       error.message
     )
   }
+  if (product.dynamic_attributes && Object.keys(product.dynamic_attributes).length > 0) {
+    db.dynamic_attributes = product.dynamic_attributes
+  }
+
+  return db
 }
 
 export async function fetchProducts() {
   if (isSupabaseConfigured()) {
+    // Try full query first
     const { data, error } = await supabase
       .from('products')
       .select('*, categories(name), inventory(stock_on_hand), product_barcodes(barcode, is_primary)')
       .order('name')
     
-    if (error) throw error
+    if (error) {
+      console.warn('Full product fetch failed, trying fallback...', error.message)
+      // Fallback for missing columns/tables
+      const { data: fallback, error: err2 } = await supabase
+        .from('products')
+        .select('*')
+        .order('name')
+      
+      if (err2) throw err2
+      
+      return fallback.map(p => ({
+        ...toAppFormat(p),
+        category: 'Uncategorized',
+        stock: 0,
+        barcodes: []
+      }))
+    }
     
     const productsWithStock = data.map(p => {
       const app = toAppFormat(p)

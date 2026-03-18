@@ -53,7 +53,7 @@ export const CustomerShop = ({ products, orders, setOrders, users, setUsers, cur
 
   const subtotal = cart.reduce((s, i) => s + i.price * (1 - (i.discount || 0) / 100) * i.qty, 0)
   const deliveryFee = orderType === 'delivery' ? (settings.deliveryZones?.find(z => z.zone === deliveryZone)?.charge || 0) : 0
-  const vatAmt = subtotal * (settings.vatRate || 20) / 100
+  const vatAmt = cart.reduce((s, i) => { const lineNet = i.price * (1 - (i.discount || 0) / 100) * i.qty; return s + lineNet * ((i.taxPct ?? 20) / 100) }, 0)
   let couponDisc = 0
   if (appliedCoupon) {
     if (appliedCoupon.type === 'percent') couponDisc = (subtotal + vatAmt + deliveryFee) * appliedCoupon.value / 100
@@ -226,7 +226,7 @@ export const CustomerShop = ({ products, orders, setOrders, users, setUsers, cur
                     </div>
                   )}
                   <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {[['Subtotal', fmt(subtotal, settings?.sym)], [`VAT (${settings.vatRate}%)`, fmt(vatAmt, settings?.sym)], deliveryFee > 0 && ['Delivery', fmt(deliveryFee, settings?.sym)], couponDisc > 0 && ['Discount', '-' + fmt(couponDisc, settings?.sym)]].filter(Boolean).map(([k, v]) => (
+                    {[['Subtotal', fmt(subtotal, settings?.sym)], ['Tax', fmt(vatAmt, settings?.sym)], deliveryFee > 0 && ['Delivery', fmt(deliveryFee, settings?.sym)], couponDisc > 0 && ['Discount', '-' + fmt(couponDisc, settings?.sym)]].filter(Boolean).map(([k, v]) => (
                       <div key={k} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: t.text3 }}><span>{k}</span><span style={{ fontWeight: 600 }}>{v}</span></div>
                     ))}
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 18, fontWeight: 900, color: t.text, paddingTop: 10, borderTop: `2px solid ${t.border}`, marginTop: 4 }}>

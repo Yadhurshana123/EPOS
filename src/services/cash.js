@@ -36,8 +36,8 @@ export async function recordCashMovement(sessionId, type, amount, referenceId, n
 
 export async function getActiveSession(counterId) {
   if (isSupabaseConfigured()) {
-    const { data, error } = await supabase.from('cash_sessions').select('*').eq('counter_id', counterId).eq('status', 'open').single()
-    if (error && error.code !== 'PGRST116') throw error
+    const { data, error } = await supabase.from('cash_sessions').select('*').eq('counter_id', counterId).eq('status', 'open').maybeSingle()
+    if (error) throw error
     return data
   }
   return null

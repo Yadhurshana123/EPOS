@@ -152,7 +152,7 @@ export const POSTerminal = ({ products, setProducts, orders, setOrders, returns 
 
   const banners = []
   const activeOffers = (settings.banners || banners || []).filter(b => isBannerActive?.(b)).filter(b => b.offerType !== 'none') || []
-  const vatRate = (settings.vatRate || 20) / 100
+  // no global vatRate — tax is per-product
   const filteredProds = products.filter(p => (cat === 'All' || p.category === cat) && (p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase())))
   const favProds = products.filter(p => favourites.includes(p.id))
 
@@ -213,7 +213,7 @@ export const POSTerminal = ({ products, setProducts, orders, setOrders, returns 
     setCart(c => {
       const ex = c.find(i => i.id === cartId)
       if (ex) return c.map(i => i.id === cartId ? { ...i, qty: i.qty + 1 } : i)
-      return [...c, { ...p, id: cartId, originalId: p.id, name: displayName, qty: 1, discount: disc, price: effectivePrice, overridePrice: overridePrice != null ? Number(overridePrice) : null }]
+      return [...c, { ...p, id: cartId, originalId: p.id, name: displayName, qty: 1, discount: disc, price: effectivePrice, taxPct: p.taxPct ?? 20, overridePrice: overridePrice != null ? Number(overridePrice) : null }]
     })
     if (disc > 0) notify(`🎉 ${disc}% offer applied on ${p.name}!`, 'success')
   }
@@ -268,7 +268,7 @@ export const POSTerminal = ({ products, setProducts, orders, setOrders, returns 
   }
 
   const cartSubtotal = cart.reduce((s, i) => s + ((i.price ?? 0) * (1 - (i.discount || 0) / 100)) * i.qty, 0)
-  const cartTax = cartSubtotal * vatRate
+  const cartTax = cart.reduce((s, i) => { const lineNet = (i.price ?? 0) * (1 - (i.discount || 0) / 100) * i.qty; return s + lineNet * ((i.taxPct ?? 0) / 100) }, 0)
   const cartBeforeExtras = cartSubtotal + cartTax
   let couponDiscount = 0
   if (appliedCoupon) {
@@ -345,16 +345,18 @@ export const POSTerminal = ({ products, setProducts, orders, setOrders, returns 
       }
       const cartItems = items.map((oi) => {
         const origQty = oi.quantity ?? oi.qty ?? 1
+        const matchedProduct = products?.find(p => p.id === (oi.product_id || oi.productId))
         return {
           id: genId('CART'),
           originalId: oi.product_id || oi.productId,
           orderItemId: oi.id,
           maxReturnQty: origQty,
-          name: oi.product_name || oi.name || products?.find(p => p.id === (oi.product_id || oi.productId))?.name || 'Item',
-          emoji: products?.find(p => p.id === (oi.product_id || oi.productId))?.emoji || '📦',
+          name: oi.product_name || oi.name || matchedProduct?.name || 'Item',
+          emoji: matchedProduct?.emoji || '📦',
           qty: origQty,
           price: oi.unit_price ?? oi.price ?? 0,
           discount: oi.discount_pct ?? oi.discount ?? 0,
+          taxPct: oi.tax_pct ?? matchedProduct?.taxPct ?? 20,
         }
       })
       setCart(cartItems)
@@ -465,7 +467,7 @@ export const POSTerminal = ({ products, setProducts, orders, setOrders, returns 
             discount: i.discount || 0,
           }))
           const subtotal = exchangeItems.reduce((s, i) => s + (i.price ?? 0) * (1 - (i.discount || 0) / 100) * (i.qty ?? 1), 0)
-          const taxAmount = Math.round(subtotal * ((settings?.vatRate ?? 20) / 100) * 100) / 100
+          const taxAmount = Math.round(replacementOnlyItems.reduce((s, i) => { const lineNet = (i.price ?? 0) * (1 - (i.discount || 0) / 100) * (i.qty ?? 1); return s + lineNet * ((i.taxPct ?? 0) / 100) }, 0) * 100) / 100
           const total = Math.round((subtotal + taxAmount) * 100) / 100
           const exchangeOrder = await ordersService.createOrderWithItems({
             siteId: effectiveSiteId,

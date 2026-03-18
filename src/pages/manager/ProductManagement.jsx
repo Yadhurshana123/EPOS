@@ -73,7 +73,7 @@ export const ProductManagement = ({ products, setProducts, addAudit, currentUser
     name: '', sku: '', barcodes: [], category_id: '', subcategory_id: '', category: '', subcategory: '', price: '', costPrice: '',
     stock: '',
     emoji: '📦', description: '', shortDescription: '', longDescription: '',
-    image: '', taxCode: '', status: 'active',
+    image: '', taxPct: 20, status: 'active',
     brand: '', supplier: '', isSeasonal: false,
     returnable: true,
     dynamic_attributes: {}
@@ -130,7 +130,7 @@ export const ProductManagement = ({ products, setProducts, addAudit, currentUser
       price: +form.price,
       costPrice: form.costPrice ? +form.costPrice : null,
       stock: +form.stock,
-      taxCode: form.taxCode || 'standard',
+      taxPct: form.taxPct != null ? +form.taxPct : 20,
       status: form.status || 'active',
       brand: form.brand || null,
       supplier: form.supplier || null,
@@ -254,7 +254,7 @@ export const ProductManagement = ({ products, setProducts, addAudit, currentUser
                   shortDescription: p.shortDescription || p.description || '',
                   longDescription: p.longDescription || '',
                   image: p.image || p.image_url || '',
-                  taxCode: p.taxCode || '',
+                  taxPct: p.taxPct ?? p.tax_pct ?? 20,
                   status: p.status || 'active',
                   brand: p.brand || '',
                   supplier: p.supplier || '',
@@ -394,7 +394,7 @@ export const ProductManagement = ({ products, setProducts, addAudit, currentUser
               style={{ width: '100%', background: t.input, border: `1px solid ${t.border}`, borderRadius: 9, padding: '12px 14px', color: t.text, fontSize: 13, outline: 'none', minHeight: 80, fontFamily: 'inherit' }}
             />
 
-            <Input t={t} label="Tax Code" value={form.taxCode} onChange={v => setForm(f => ({ ...f, taxCode: v }))} placeholder="standard" />
+            <Input t={t} label="Tax %" type="number" value={form.taxPct} onChange={v => setForm(f => ({ ...f, taxPct: v }))} placeholder="20" />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: t.text }}>

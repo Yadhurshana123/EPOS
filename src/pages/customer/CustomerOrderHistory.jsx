@@ -106,7 +106,7 @@ export const CustomerOrderHistory = ({ orders, t: tProp, settings }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {[
                 ['Subtotal', fmt(viewOrder.subtotal, settings?.sym)],
-                viewOrder.tax > 0 && ['VAT', fmt(viewOrder.tax, settings?.sym)],
+                viewOrder.tax > 0 && ['Tax', fmt(viewOrder.tax, settings?.sym)],
                 viewOrder.deliveryCharge > 0 && ['Delivery', fmt(viewOrder.deliveryCharge, settings?.sym)],
                 viewOrder.couponDiscount > 0 && ['Coupon Discount', '-' + fmt(viewOrder.couponDiscount, settings?.sym)],
                 viewOrder.loyaltyDiscount > 0 && ['Loyalty Discount', '-' + fmt(viewOrder.loyaltyDiscount, settings?.sym)],
