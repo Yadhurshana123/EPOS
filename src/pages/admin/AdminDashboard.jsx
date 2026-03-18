@@ -11,16 +11,16 @@ const SHOPS = [
 export const AdminDashboard = ({ orders, users, products, t, settings }) => {
   const [activeShop, setActiveShop] = useState('all')
 
-  const total = orders.reduce((s, o) => s + o.total, 0)
+  const total = (orders || []).reduce((s, o) => s + (o.total || 0), 0)
   const topP = {}
-  orders.forEach(o => o.items.forEach(i => { topP[i.name] = (topP[i.name] || 0) + i.qty }))
+  ;(orders || []).forEach(o => (o.items || []).forEach(i => { topP[i.name] = (topP[i.name] || 0) + i.qty }))
   const top = Object.entries(topP).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
-  const shopOrders = SHOPS.map((_, si) => orders.filter((__, idx) => idx % 3 === si))
+  const shopOrders = SHOPS.map((_, si) => (orders || []).filter((__, idx) => idx % 3 === si))
   const activeShopOrders = activeShop === 'all'
-    ? orders
+    ? (orders || [])
     : shopOrders[SHOPS.findIndex(s => s.id === activeShop)] || []
-  const shopTotal = activeShopOrders.reduce((s, o) => s + o.total, 0)
+  const shopTotal = activeShopOrders.reduce((s, o) => s + (o.total || 0), 0)
 
   const lowStock = (products || []).filter(p => p.stock < 10 && p.stock > 0)
 
@@ -58,7 +58,7 @@ export const AdminDashboard = ({ orders, users, products, t, settings }) => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(180px,45vw),1fr))', gap: 14 }}>
         <StatCard t={t} title="Revenue" value={fmt(shopTotal, settings?.sym)} color={t.accent} icon="💰" trend={activeShop === 'all' ? 12 : undefined} />
         <StatCard t={t} title="Orders" value={activeShopOrders.length} color={t.blue} icon="🧾" trend={activeShop === 'all' ? 8 : undefined} />
-        <StatCard t={t} title="Users" value={users.length} color={t.green} icon="👥" />
+        <StatCard t={t} title="Users" value={(users || []).length} color={t.green} icon="👥" />
         <StatCard t={t} title="Products" value={(products || []).length} color={t.yellow} icon="📦" />
       </div>
 
@@ -141,11 +141,11 @@ export const AdminDashboard = ({ orders, users, products, t, settings }) => {
           cols={['Order', 'Customer', 'Cashier', 'Total', 'Payment', 'Status']}
           rows={activeShopOrders.slice(0, 8).map(o => [
             o.id,
-            o.customerName,
-            o.cashierName,
-            fmt(o.total, settings?.sym),
-            o.payment,
-            <Badge t={t} text={o.status} color={o.status === 'completed' ? 'green' : 'red'} />,
+            o.customerName || 'Walk-in',
+            o.cashierName || 'System',
+            fmt(o.total || 0, settings?.sym),
+            o.payment || '-',
+            <Badge t={t} text={o.status || 'pending'} color={o.status === 'completed' ? 'green' : 'red'} />,
           ])}
         />
       </Card>

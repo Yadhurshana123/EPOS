@@ -9,19 +9,20 @@ export const AdminAnalytics = ({ orders, products, t, settings }) => {
     ? orders
     : orders.filter((_, i) => ['Main Stadium Store', 'East Wing Megastore', 'Airport Pop-up'].indexOf(shopFilter) === i % 3)
 
-  const totalRev = shopOrders.reduce((s, o) => s + o.total, 0)
+  const totalRev = (shopOrders || []).reduce((s, o) => s + (o.total || 0), 0)
   const byPayment = { Card: 0, Cash: 0, QR: 0, Online: 0 }
-  shopOrders.forEach(o => { byPayment[o.payment] = (byPayment[o.payment] || 0) + o.total })
+  ;(shopOrders || []).forEach(o => { if (o && o.payment) byPayment[o.payment] = (byPayment[o.payment] || 0) + (o.total || 0) })
   const byType = { 'in-store': 0, pickup: 0, delivery: 0 }
-  shopOrders.forEach(o => { byType[o.orderType || 'in-store'] = (byType[o.orderType || 'in-store'] || 0) + 1 })
+  ;(shopOrders || []).forEach(o => { if (o) byType[o.orderType || 'in-store'] = (byType[o.orderType || 'in-store'] || 0) + 1 })
   const topP = {}
-  shopOrders.forEach(o => o.items.forEach(i => { topP[i.name] = (topP[i.name] || 0) + i.qty }))
+  ;(shopOrders || []).forEach(o => (o?.items || []).forEach(i => { if (i?.name) topP[i.name] = (topP[i.name] || 0) + (i.qty || 0) }))
   const topProducts = Object.entries(topP).sort((a, b) => b[1] - a[1]).slice(0, 6)
   const catRev = {}
-  shopOrders.forEach(o => o.items.forEach(i => {
-    const p = products.find(x => x.name === i.name)
+  ;(shopOrders || []).forEach(o => (o?.items || []).forEach(i => {
+    if (!i) return
+    const p = (products || []).find(x => x.name === i.name)
     const cat = p?.category || 'Other'
-    catRev[cat] = (catRev[cat] || 0) + i.price * i.qty
+    catRev[cat] = (catRev[cat] || 0) + (i.price || 0) * (i.qty || 0)
   }))
   const maxRev = Math.max(...Object.values(catRev), 1)
   const colors = ['#dc2626', '#2563eb', '#16a34a', '#d97706', '#7c3aed', '#0d9488']

@@ -24,7 +24,7 @@ export function LoginPage() {
     setErr('')
     const parsed = loginSchema.safeParse({ email, password: pass })
     if (!parsed.success) {
-      const firstError = parsed.error.errors[0]?.message
+      const firstError = parsed.error?.issues?.[0]?.message
       notify(firstError || 'Validation failed', 'error')
       setErr(firstError || 'Validation failed')
       return
