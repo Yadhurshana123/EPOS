@@ -33,7 +33,7 @@ export const ReceiptModal = ({ order, settings, onClose, t }) => {
         ))}
       </div>
       <div style={{ fontSize: 12 }}>
-        {[['Subtotal', fmt(order.subtotal, settings?.sym)], [`VAT (${settings.vatRate}%)`, fmt(order.tax, settings?.sym)], order.deliveryCharge > 0 && ['Delivery', fmt(order.deliveryCharge, settings?.sym)], order.couponDiscount > 0 && [`Coupon (${order.couponCode})`, `-${fmt(order.couponDiscount, settings?.sym)}`], order.loyaltyDiscount > 0 && ['Loyalty Discount', `-${fmt(order.loyaltyDiscount, settings?.sym)}`]].filter(Boolean).map(([k, v]) => (
+        {[['Subtotal', fmt(order.subtotal, settings?.sym)], ['Tax', fmt(order.tax, settings?.sym)], order.deliveryCharge > 0 && ['Delivery', fmt(order.deliveryCharge, settings?.sym)], order.couponDiscount > 0 && [`Coupon (${order.couponCode})`, `-${fmt(order.couponDiscount, settings?.sym)}`], order.loyaltyDiscount > 0 && ['Loyalty Discount', `-${fmt(order.loyaltyDiscount, settings?.sym)}`]].filter(Boolean).map(([k, v]) => (
           <div key={k} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}><span style={{ color: '#666' }}>{k}</span><span>{v}</span></div>
         ))}
         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 900, fontSize: 17, borderTop: '1px dashed #aaa', marginTop: 6, paddingTop: 6 }}><span>TOTAL</span><span>{fmt(order.total, settings?.sym)}</span></div>

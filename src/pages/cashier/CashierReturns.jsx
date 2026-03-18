@@ -217,8 +217,8 @@ export const CashierReturns = ({
             discount: itemDiscount(item),
           }))
           const subtotal = exchangeItems.reduce((s, i) => s + i.price * (1 - i.discount / 100) * i.qty, 0)
-          const vatRate = settings?.vatRate ?? 20
-          const taxAmount = Math.round(subtotal * (vatRate / 100) * 100) / 100
+          const vatRate = 0 // per-product tax now
+          const taxAmount = Math.round(exchangeItems.reduce((s, i) => { const p = (products || []).find(pr => pr.id === (i.productId || i.product_id)); const lineNet = i.price * (1 - i.discount / 100) * i.qty; return s + lineNet * ((p?.taxPct ?? 20) / 100) }, 0) * 100) / 100
           const total = Math.round((subtotal + taxAmount) * 100) / 100
 
           const exchangeOrder = await ordersService.createOrderWithItems({

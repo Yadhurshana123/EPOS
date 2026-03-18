@@ -34,7 +34,7 @@ export const ZReport = ({ orders, settings, t }) => {
   })
 
   const exportCsv = () => {
-    const d = `Z-REPORT,${dateLabel}\nTotal Revenue,${fmt(total, settings?.sym)}\nCard,${fmt(card, settings?.sym)}\nCash,${fmt(cash, settings?.sym)}\nQR,${fmt(qr, settings?.sym)}\nSplit,${fmt(split, settings?.sym)}\nVAT,${fmt(tax, settings?.sym)}\nOrders,${dayOrders.length}\nRefunds,${fmt(refunded, settings?.sym)}`
+    const d = `Z-REPORT,${dateLabel}\nTotal Revenue,${fmt(total, settings?.sym)}\nCard,${fmt(card, settings?.sym)}\nCash,${fmt(cash, settings?.sym)}\nQR,${fmt(qr, settings?.sym)}\nSplit,${fmt(split, settings?.sym)}\nTax,${fmt(tax, settings?.sym)}\nOrders,${dayOrders.length}\nRefunds,${fmt(refunded, settings?.sym)}`
     const b = new Blob([d], { type: 'text/csv' })
     const url = URL.createObjectURL(b)
     const a = document.createElement('a')
@@ -72,7 +72,7 @@ export const ZReport = ({ orders, settings, t }) => {
           ['Cash Sales', fmt(cash, settings?.sym), t.green, '💵'],
           ['QR Sales', fmt(qr, settings?.sym), t.purple, '📱'],
           ['Split Sales', fmt(split, settings?.sym), t.teal, '✂️'],
-          ['VAT Collected', fmt(tax, settings?.sym), t.yellow, '🏛️'],
+          ['Tax Collected', fmt(tax, settings?.sym), t.yellow, '🏛️'],
           ['Refunds', fmt(refunded, settings?.sym), t.red, '↩️'],
           ['Net Revenue', fmt(total - refunded, settings?.sym), t.accent, '💰'],
         ].map(([k, v, c, i]) => <StatCard key={k} t={t} title={k} value={v} color={c} icon={i} />)}
